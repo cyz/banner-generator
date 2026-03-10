@@ -32,7 +32,7 @@ interface EventDetails {
   city: string
   dateTime: string
   location: string
-  organization: string
+  // ...existing code...
   organizerLogoDataUrl?: string
   includeSupportedBy: boolean
   registrationEnabled: boolean
@@ -174,7 +174,7 @@ function buildDefaultState(): BannerState {
       city: 'San Francisco',
       dateTime: 'Apr 15 • 7:00 PM',
       location: 'North Convention Center',
-      organization: 'GitHub',
+      // ...existing code...
       organizerLogoDataUrl: '',
       includeSupportedBy: false,
       registrationEnabled: true,
@@ -351,6 +351,7 @@ async function renderBanner(
   const isSpeakerFormat = isSpeakerProfile || state.format === 'speaker_banner' || isSocialPromo
   const hasSpeakers = !isMinimalCover && !isSocialPromo && state.speakers.length > 0
   let socialPromoLocationBottomY = 0
+  let speakerBannerProfileBottomY = 0
 
   const titleSize = Math.max(36, Math.round(width * 0.04))
   const metaSize = Math.max(20, Math.round(width * 0.018))
@@ -511,58 +512,45 @@ async function renderBanner(
     const rightW = infoW - leftW
 
     const innerPadX = Math.round(16 * textScale)
+    const horizontalInset = isSocialPromo || isSpeakerBanner ? 0 : innerPadX
     const titleYOffset = Math.round(30 * textScale)
     const contentOffset = Math.round(40 * textScale)
     const bottomInset = Math.round(10 * textScale)
 
     const headingSize = Math.round(metaSize * 1.2 * textScale)
-    const bodySize = Math.max(20, Math.round(metaSize * 1.08 * textScale))
-    const organizationText = state.event.organization?.trim() || 'Organization'
     const showOrganizerLogo = Boolean(state.event.organizerLogoDataUrl)
     const titleY = infoY + titleYOffset
     const contentTopY = titleY + contentOffset
-    let organizerLogoRendered = false
+    const organizationTitleX = infoX + horizontalInset
+    const supportedByTitleX = rightX + horizontalInset
 
     ctx.fillStyle = '#8b949e'
     ctx.font = `600 ${headingSize}px "Mona Sans", sans-serif`
-    ctx.fillText('Organization', infoX, titleY)
+    ctx.fillText('Organization', organizationTitleX, titleY)
 
     if (showOrganizerLogo && state.event.organizerLogoDataUrl) {
       try {
         const organizerLogo = await loadImage(state.event.organizerLogoDataUrl)
         const logoMaxH = infoH - (contentTopY - infoY) - bottomInset
-        const logoMaxW = leftW - innerPadX * 2
+        const logoMaxW = leftW - horizontalInset * 2
         const ratio = organizerLogo.width / organizerLogo.height
         const targetW = Math.min(logoMaxW, logoMaxH * ratio)
         const targetH = targetW / ratio
-        const logoX = infoX + innerPadX
+        const logoX = organizationTitleX
         const logoY = contentTopY
         ctx.drawImage(organizerLogo, logoX, logoY, targetW, targetH)
-        organizerLogoRendered = true
       } catch {
-        // Keep rendering text even if logo fails to load.
+        // Keep rendering supported-by section even if organizer logo fails to load.
       }
-    }
-
-    if (!organizerLogoRendered) {
-      ctx.fillStyle = '#f0f6fc'
-      ctx.font = `600 ${bodySize}px "Mona Sans", sans-serif`
-      const orgLines = wrapText(ctx, organizationText, leftW - innerPadX * 2, 2)
-      orgLines.forEach((line, index) => {
-        const orgBaseY = contentTopY + bodySize
-        ctx.fillText(line, infoX + innerPadX, orgBaseY + index * (bodySize * 1.02))
-      })
     }
 
     const showSupportedBy = state.event.includeSupportedBy && state.partners.length > 0
     if (showSupportedBy) {
-      ctx.fillStyle = '#8b949e'
-      ctx.font = `600 ${headingSize}px "Mona Sans", sans-serif`
-      ctx.fillText('Supported by', rightX, titleY)
+      ctx.fillText('Supported by', supportedByTitleX, titleY)
 
       const logos = state.partners.slice(0, 3)
       const logosY = contentTopY
-      const logosAreaW = rightW - innerPadX * 2
+      const logosAreaW = rightW - horizontalInset * 2
       const logosAreaH = infoH - (contentTopY - infoY) - bottomInset
       const columns = logos.length
       const rows = 1
@@ -575,7 +563,7 @@ async function renderBanner(
           const ratio = logo.width / logo.height
           const col = i % Math.max(columns, 1)
           const row = Math.floor(i / Math.max(columns, 1))
-          const slotX = rightX + innerPadX + logoSlotW * col
+          const slotX = supportedByTitleX + logoSlotW * col
           const slotY = logosY + logoSlotH * row
           let targetW = Math.min(logoSlotW * 0.92, logoSlotH * ratio)
           let targetH = targetW / ratio
@@ -605,7 +593,7 @@ async function renderBanner(
       const avatarBorderWidth = Math.max(4, Math.round(avatarSize * 0.02))
       const sideInset = padding
       const rowX = sideInset
-      const rowY = Math.round(height * 0.53) - 60
+      const rowY = Math.round(height * 0.5) - 60
       const textX = rowX + avatarSize + speakerGap
       const textMaxWidth = Math.max(140, width - sideInset - textX)
 
@@ -667,9 +655,7 @@ async function renderBanner(
         })
       }
 
-      const infoY = rowY + avatarSize + Math.round(height * 0.04)
-      const infoH = Math.round(height * 0.16)
-      await drawOrganizationPanel(infoY, infoH)
+      speakerBannerProfileBottomY = rowY + avatarSize
     } else {
       const visibleSpeakers = state.speakers.slice(0, MAX_SPEAKERS)
       const totalWidth = visibleSpeakers.reduce((sum, _, index) => {
@@ -738,25 +724,35 @@ async function renderBanner(
     }
   }
 
-  if (isSocialPromo) {
-    const infoH = Math.round(height * 0.17)
+  if (isSpeakerBanner || isSocialPromo) {
+    const infoH = Math.round(height * (isSocialPromo ? 0.17 : 0.16))
     const registerTopGap = 40
     const registerBottomGap = 40
-    let nextSectionStartY = Math.round(height * 0.67)
+    let nextSectionStartY = Math.round(
+      isSocialPromo
+        ? height * 0.67
+        : Math.max(height * 0.78, speakerBannerProfileBottomY + registerTopGap),
+    )
 
     if (state.event.registrationEnabled && state.event.registrationUrl.trim()) {
-      const barHeight = Math.round(height * 0.082 * socialPromoScale)
+      const registrationScale = isSocialPromo ? socialPromoScale : 1
+      const barHeight = Math.round(height * 0.082 * registrationScale)
       const barW = width - padding * 2
       const textInset = Math.round(barHeight * 0.3)
-      const labelSize = Math.max(18, Math.round(metaSize * 1.2 * socialPromoScale))
-      const urlSize = Math.max(18, Math.round(metaSize * 1.08 * socialPromoScale))
+      const organizationLabelSize = Math.round(metaSize * 1.2 * registrationScale)
+      const labelSize = Math.max(18, organizationLabelSize)
+      const urlSize = labelSize
 
       const urlText = state.event.registrationUrl.trim()
       const ctaText = state.event.registrationStyle === 'url_only' ? '' : state.event.registrationText.trim() || 'Register'
       const lineSize = Math.max(urlSize, labelSize)
       const lineY = Math.max(
-        Math.round(height * 0.74),
-        Math.round(socialPromoLocationBottomY + registerTopGap + lineSize * 0.8),
+        Math.round(isSocialPromo ? height * 0.74 : height * 0.72),
+        Math.round(
+          (isSocialPromo ? socialPromoLocationBottomY : speakerBannerProfileBottomY) +
+            registerTopGap +
+            lineSize * 0.8,
+        ),
       )
       const labelX = padding
       const urlRightX = width - padding
@@ -794,7 +790,7 @@ async function renderBanner(
 
     const maxInfoY = height - infoH - Math.round(padding * 0.35)
     const infoY = Math.min(nextSectionStartY, maxInfoY)
-    await drawOrganizationPanel(infoY, infoH, socialPromoScale)
+    await drawOrganizationPanel(infoY, infoH, isSocialPromo ? socialPromoScale : 1)
   }
 
   if (!isMinimalCover && !isSpeakerBanner && !isSocialPromo && state.partners.length > 0) {
@@ -948,12 +944,17 @@ function App() {
 
   const canProceed = useMemo(() => {
     if (effectiveStep === 1 && isSocialPromo) {
-      const hasRequiredBranding = state.event.organization.trim().length > 0 && Boolean(state.event.organizerLogoDataUrl)
+      const hasRequiredBranding = Boolean(state.event.organizerLogoDataUrl)
+      if (!state.event.registrationEnabled) return hasRequiredBranding
+      return hasRequiredBranding && state.event.registrationUrl.trim().length > 0
+    }
+    if (effectiveStep === 1 && isSpeakerBanner) {
+      const hasRequiredBranding = Boolean(state.event.organizerLogoDataUrl)
       if (!state.event.registrationEnabled) return hasRequiredBranding
       return hasRequiredBranding && state.event.registrationUrl.trim().length > 0
     }
     if (effectiveStep === 1 && (isSpeakerBanner || isSocialPromo)) {
-      return state.event.organization.trim().length > 0 && Boolean(state.event.organizerLogoDataUrl)
+      return Boolean(state.event.organizerLogoDataUrl)
     }
     if (!isMinimalCover && !isSocialPromo && effectiveStep === 2) {
       return state.speakers.length <= MAX_SPEAKERS && state.speakers.every((speaker) => speaker.name.trim().length > 0)
@@ -1043,7 +1044,7 @@ function App() {
       ...item.state,
       event: {
         ...item.state.event,
-        organization: item.state.event?.organization ?? 'GitHub',
+        // ...existing code...
         organizerLogoDataUrl: item.state.event?.organizerLogoDataUrl ?? '',
         includeSupportedBy: item.state.event?.includeSupportedBy ?? false,
         registrationEnabled: item.state.event?.registrationEnabled ?? true,
@@ -1206,26 +1207,11 @@ function App() {
                 )}
                 {(isSpeakerBanner || isSocialPromo) && (
                   <>
-                    <label>
-                      <span className="label-row">
-                        Organization *
-                        <small>Required for Speaker Banner and Social Promo</small>
-                      </span>
-                      <input
-                        type="text"
-                        value={state.event.organization}
-                        onChange={(event) =>
-                          setState((previous) => ({
-                            ...previous,
-                            event: { ...previous.event, organization: event.target.value },
-                          }))
-                        }
-                      />
-                    </label>
+                    {/* Organization name field removed. Only logo upload remains. */}
                     <label>
                       <span className="label-row">
                         Organizer logo *
-                        <small>Used in the Organization section</small>
+                        <small>Used in banner branding area</small>
                       </span>
                       <input
                         type="file"
@@ -1250,7 +1236,7 @@ function App() {
                   </>
                 )}
 
-                {isSocialPromo && (
+                {(isSocialPromo || isSpeakerBanner) && (
                   <>
                     <button
                       type="button"
