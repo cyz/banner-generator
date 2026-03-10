@@ -141,6 +141,7 @@ const lumaCityColor = '#00d12f'
 const steps = ['Format', 'Event', 'Speakers', 'Partners', 'Export']
 const BANNER_HISTORY_STORAGE_KEY = 'banner-history-v1'
 const MAX_HISTORY_ITEMS = 20
+const MAX_SPEAKERS = 4
 const coverFormatIds: BannerFormat[] = ['event_widescreen', 'luma_cover']
 const socialFormatIds: BannerFormat[] = ['speaker_banner', 'social_promo']
 
@@ -184,8 +185,8 @@ function buildDefaultState(): BannerState {
     speakers: [
       {
         id: uid(),
-        name: 'Aline Costa',
-        role: 'Senior Product Manager',
+        name: 'Speaker Name',
+        role: 'Speaker Role',
       },
     ],
     partners: [],
@@ -509,18 +510,10 @@ async function renderBanner(
     const rightX = infoX + leftW
     const rightW = infoW - leftW
 
-    const dividerInset = Math.round(12 * textScale)
     const innerPadX = Math.round(16 * textScale)
     const titleYOffset = Math.round(30 * textScale)
     const contentOffset = Math.round(40 * textScale)
     const bottomInset = Math.round(10 * textScale)
-
-    ctx.beginPath()
-    ctx.moveTo(rightX, infoY + dividerInset)
-    ctx.lineTo(rightX, infoY + infoH - dividerInset)
-    ctx.strokeStyle = 'rgba(240, 246, 252, 0.2)'
-    ctx.lineWidth = 1
-    ctx.stroke()
 
     const headingSize = Math.round(metaSize * 1.2 * textScale)
     const bodySize = Math.max(20, Math.round(metaSize * 1.08 * textScale))
@@ -678,7 +671,7 @@ async function renderBanner(
       const infoH = Math.round(height * 0.16)
       await drawOrganizationPanel(infoY, infoH)
     } else {
-      const visibleSpeakers = state.speakers.slice(0, 4)
+      const visibleSpeakers = state.speakers.slice(0, MAX_SPEAKERS)
       const totalWidth = visibleSpeakers.reduce((sum, _, index) => {
         const size = isSpeakerProfile && index === 0 ? speakerSize * 1.25 : speakerSize
         return sum + size
@@ -850,6 +843,7 @@ function App() {
   const [backgroundFailed, setBackgroundFailed] = useState(false)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<BannerHistoryItem[]>(() => readBannerHistory())
+  const [speakerPreviews, setSpeakerPreviews] = useState<Array<{ id: string; name: string; previewDataUrl: string }>>([])
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const [state, setState] = useState<BannerState>(() => buildDefaultState())
@@ -861,8 +855,15 @@ function App() {
   const isWidescreenCover = state.format === 'event_widescreen'
   const isLumaCover = state.format === 'luma_cover'
   const isSpeakerBanner = state.format === 'speaker_banner'
+  const isSpeakerSquare = state.format === 'speaker_square'
   const isSocialPromo = state.format === 'social_promo'
   const isMinimalCover = isLumaCover || isWidescreenCover
+  const isSpeakerPerBannerFormat = isSpeakerBanner || isSpeakerSquare
+  const namedSpeakers = useMemo(
+    () => state.speakers.filter((speaker) => speaker.name.trim().length > 0).slice(0, MAX_SPEAKERS),
+    [state.speakers],
+  )
+  const showMultiSpeakerPreviewGrid = isSpeakerPerBannerFormat && namedSpeakers.length > 1
   const selectedBackgroundImage = useMemo(() => getBackgroundImage(state.format), [state.format])
   const visibleStepIndexes = useMemo(() => {
     if (isMinimalCover) return [0, 1, 4]
@@ -880,6 +881,11 @@ function App() {
 
     const draw = async () => {
       if (!canvasRef.current) return
+      if (showMultiSpeakerPreviewGrid) {
+        const ctx = canvasRef.current.getContext('2d')
+        if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+        return
+      }
       await renderBanner(canvasRef.current, state, format, previewBackgroundFailed, 1)
     }
 
@@ -890,7 +896,48 @@ function App() {
     return () => {
       mounted = false
     }
-  }, [state, format, previewBackgroundFailed])
+  }, [state, format, previewBackgroundFailed, showMultiSpeakerPreviewGrid])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const drawSpeakerPreviews = async () => {
+      if (!isSpeakerPerBannerFormat || namedSpeakers.length <= 1) {
+        setSpeakerPreviews([])
+        return
+      }
+
+      const previews: Array<{ id: string; name: string; previewDataUrl: string }> = []
+
+      for (const speaker of namedSpeakers) {
+        const previewCanvas = document.createElement('canvas')
+        const previewState: BannerState = {
+          ...state,
+          speakers: [speaker],
+        }
+        await renderBanner(previewCanvas, previewState, format, previewBackgroundFailed, 1)
+        previews.push({
+          id: speaker.id,
+          name: speaker.name,
+          previewDataUrl: previewCanvas.toDataURL('image/jpeg', 0.8),
+        })
+      }
+
+      if (!cancelled) {
+        setSpeakerPreviews(previews)
+      }
+    }
+
+    drawSpeakerPreviews().catch(() => {
+      if (!cancelled) {
+        setSpeakerPreviews([])
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [state, format, previewBackgroundFailed, isSpeakerPerBannerFormat, namedSpeakers])
 
   useEffect(() => {
     if (!selectedBackgroundImage) return
@@ -909,13 +956,13 @@ function App() {
       return state.event.organization.trim().length > 0 && Boolean(state.event.organizerLogoDataUrl)
     }
     if (!isMinimalCover && !isSocialPromo && effectiveStep === 2) {
-      return state.speakers.length <= 4 && state.speakers.every((speaker) => speaker.name.trim().length > 0)
+      return state.speakers.length <= MAX_SPEAKERS && state.speakers.every((speaker) => speaker.name.trim().length > 0)
     }
     return true
   }, [effectiveStep, isMinimalCover, isSocialPromo, isSpeakerBanner, state])
 
   const addSpeaker = () => {
-    if (state.speakers.length >= 4) return
+    if (state.speakers.length >= MAX_SPEAKERS) return
     setState((previous) => ({
       ...previous,
       speakers: [...previous.speakers, { id: uid(), name: '', role: '' }],
@@ -925,31 +972,57 @@ function App() {
   const exportBanner = async () => {
     setError('')
     try {
-      const offscreen = document.createElement('canvas')
-      await renderBanner(offscreen, state, format, backgroundFailed, state.export.scale)
       const mime = state.export.type === 'png' ? 'image/png' : 'image/jpeg'
-      const dataUrl = offscreen.toDataURL(mime, 0.95)
+      const isSpeakerPerBannerFormat = state.format === 'speaker_banner' || state.format === 'speaker_square'
+      const speakersToExport = isSpeakerPerBannerFormat
+        ? state.speakers.filter((speaker) => speaker.name.trim().length > 0).slice(0, MAX_SPEAKERS)
+        : []
+      const exportStates =
+        speakersToExport.length > 1
+          ? speakersToExport.map((speaker) => ({
+              ...state,
+              speakers: [speaker],
+            }))
+          : [state]
 
-      const previewCanvas = document.createElement('canvas')
-      await renderBanner(previewCanvas, state, format, backgroundFailed, 1)
-      const previewDataUrl = previewCanvas.toDataURL('image/jpeg', 0.8)
+      const historyItems: BannerHistoryItem[] = []
 
-      const historyItem: BannerHistoryItem = {
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        state,
-        previewDataUrl,
+      for (let i = 0; i < exportStates.length; i += 1) {
+        const exportState = exportStates[i]
+        const offscreen = document.createElement('canvas')
+        await renderBanner(offscreen, exportState, format, backgroundFailed, exportState.export.scale)
+        const dataUrl = offscreen.toDataURL(mime, 0.95)
+
+        const previewCanvas = document.createElement('canvas')
+        await renderBanner(previewCanvas, exportState, format, backgroundFailed, 1)
+        const previewDataUrl = previewCanvas.toDataURL('image/jpeg', 0.8)
+
+        historyItems.push({
+          id: uid(),
+          createdAt: new Date().toISOString(),
+          state: exportState,
+          previewDataUrl,
+        })
+
+        const speakerSuffix =
+          exportStates.length > 1
+            ? `-${(exportState.speakers[0]?.name || `speaker-${i + 1}`)
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '') || `speaker-${i + 1}`}`
+            : ''
+
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = `banner-${exportState.format}${speakerSuffix}-${exportState.export.scale}x.${exportState.export.type}`
+        link.click()
       }
+
       setHistory((previous) => {
-        const next = [historyItem, ...previous].slice(0, MAX_HISTORY_ITEMS)
+        const next = [...historyItems.reverse(), ...previous].slice(0, MAX_HISTORY_ITEMS)
         writeBannerHistory(next)
         return next
       })
-
-      const link = document.createElement('a')
-      link.href = dataUrl
-      link.download = `banner-${state.format}-${state.export.scale}x.${state.export.type}`
-      link.click()
     } catch {
       setError('Could not export file.')
     }
@@ -1258,8 +1331,9 @@ function App() {
 
           {effectiveStep === 2 && !isMinimalCover && !isSocialPromo && (
             <div className="section-block">
-              <h2>Speakers (up to 4)</h2>
-              <button type="button" onClick={addSpeaker} disabled={state.speakers.length >= 4}>
+              <h2>Speakers (up to {MAX_SPEAKERS})</h2>
+              <p className="section-description">For stable real-time preview and export, we support up to {MAX_SPEAKERS} speakers.</p>
+              <button type="button" onClick={addSpeaker} disabled={state.speakers.length >= MAX_SPEAKERS}>
                 Add speaker
               </button>
               <div className="stack">
@@ -1532,9 +1606,28 @@ function App() {
           <p>
             Active format: <strong>{format.name}</strong> ({format.width}x{format.height})
           </p>
-          <div className="canvas-wrap" style={{ aspectRatio: `${format.width} / ${format.height}` }}>
-            <canvas ref={canvasRef} aria-label="Banner preview" />
-          </div>
+          {!showMultiSpeakerPreviewGrid && (
+            <div className="canvas-wrap" style={{ aspectRatio: `${format.width} / ${format.height}` }}>
+              <canvas ref={canvasRef} aria-label="Banner preview" />
+            </div>
+          )}
+
+          {speakerPreviews.length > 0 && (
+            <div className="speaker-preview-block">
+              <div className="history-header">
+                <h3>Speaker banners</h3>
+                <span>{speakerPreviews.length} real-time preview(s)</span>
+              </div>
+              <div className="speaker-preview-grid">
+                {speakerPreviews.map((item) => (
+                  <article key={item.id} className="speaker-preview-item">
+                    <img src={item.previewDataUrl} alt={`Preview banner for ${item.name}`} />
+                    <strong>{item.name}</strong>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="history-block">
             <div className="history-header">
