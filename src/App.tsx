@@ -32,7 +32,6 @@ interface EventDetails {
   city: string
   dateTime: string
   location: string
-  // ...existing code...
   organizerLogoDataUrl?: string
   includeSupportedBy: boolean
   registrationEnabled: boolean
@@ -130,9 +129,6 @@ const defaultColors: BannerState['colors'] = {
   background: '#0d1117',
 }
 
-const defaultLumaBackgroundImage = lumaBackgroundImage
-const defaultSpeakerBackgroundImage = speakerBackgroundImage
-const defaultWidescreenBackgroundImage = widescreenBackgroundImage
 const brandTitleLine1 = 'GitHub Copilot'
 const brandTitleLine2 = 'Dev Days'
 const fixedEventTitle = 'GitHub Copilot Dev Days'
@@ -174,7 +170,6 @@ function buildDefaultState(): BannerState {
       city: 'San Francisco',
       dateTime: 'Apr 15 • 7:00 PM',
       location: 'North Convention Center',
-      // ...existing code...
       organizerLogoDataUrl: '',
       includeSupportedBy: false,
       registrationEnabled: true,
@@ -230,10 +225,10 @@ function loadImage(src: string) {
 
 function getBackgroundImage(format: BannerFormat) {
   if (format === 'speaker_square') return null
-  if (format === 'speaker_banner') return defaultSpeakerBackgroundImage
-  if (format === 'social_promo') return defaultSpeakerBackgroundImage
-  if (format === 'luma_cover') return defaultLumaBackgroundImage
-  if (format === 'event_widescreen') return defaultWidescreenBackgroundImage
+  if (format === 'speaker_banner') return speakerBackgroundImage
+  if (format === 'social_promo') return speakerBackgroundImage
+  if (format === 'luma_cover') return lumaBackgroundImage
+  if (format === 'event_widescreen') return widescreenBackgroundImage
   return null
 }
 
@@ -943,18 +938,10 @@ function App() {
   }, [selectedBackgroundImage])
 
   const canProceed = useMemo(() => {
-    if (effectiveStep === 1 && isSocialPromo) {
+    if (effectiveStep === 1 && (isSocialPromo || isSpeakerBanner)) {
       const hasRequiredBranding = Boolean(state.event.organizerLogoDataUrl)
       if (!state.event.registrationEnabled) return hasRequiredBranding
       return hasRequiredBranding && state.event.registrationUrl.trim().length > 0
-    }
-    if (effectiveStep === 1 && isSpeakerBanner) {
-      const hasRequiredBranding = Boolean(state.event.organizerLogoDataUrl)
-      if (!state.event.registrationEnabled) return hasRequiredBranding
-      return hasRequiredBranding && state.event.registrationUrl.trim().length > 0
-    }
-    if (effectiveStep === 1 && (isSpeakerBanner || isSocialPromo)) {
-      return Boolean(state.event.organizerLogoDataUrl)
     }
     if (!isMinimalCover && !isSocialPromo && effectiveStep === 2) {
       return state.speakers.length <= MAX_SPEAKERS && state.speakers.every((speaker) => speaker.name.trim().length > 0)
@@ -970,11 +957,19 @@ function App() {
     }))
   }
 
+  const updateEvent = (patch: Partial<EventDetails>) =>
+    setState((prev) => ({ ...prev, event: { ...prev.event, ...patch } }))
+
+  const updateSpeaker = (id: string, patch: Partial<Speaker>) =>
+    setState((prev) => ({
+      ...prev,
+      speakers: prev.speakers.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }))
+
   const exportBanner = async () => {
     setError('')
     try {
       const mime = state.export.type === 'png' ? 'image/png' : 'image/jpeg'
-      const isSpeakerPerBannerFormat = state.format === 'speaker_banner' || state.format === 'speaker_square'
       const speakersToExport = isSpeakerPerBannerFormat
         ? state.speakers.filter((speaker) => speaker.name.trim().length > 0).slice(0, MAX_SPEAKERS)
         : []
@@ -1044,7 +1039,6 @@ function App() {
       ...item.state,
       event: {
         ...item.state.event,
-        // ...existing code...
         organizerLogoDataUrl: item.state.event?.organizerLogoDataUrl ?? '',
         includeSupportedBy: item.state.event?.includeSupportedBy ?? false,
         registrationEnabled: item.state.event?.registrationEnabled ?? true,
@@ -1163,12 +1157,7 @@ function App() {
                   <input
                     type="text"
                     value={state.event.city}
-                    onChange={(event) =>
-                      setState((previous) => ({
-                        ...previous,
-                        event: { ...previous.event, city: event.target.value },
-                      }))
-                    }
+                    onChange={(e) => updateEvent({ city: e.target.value })}
                   />
                 </label>
                 <label>
@@ -1179,12 +1168,7 @@ function App() {
                   <input
                     type="text"
                     value={state.event.dateTime}
-                    onChange={(event) =>
-                      setState((previous) => ({
-                        ...previous,
-                        event: { ...previous.event, dateTime: event.target.value },
-                      }))
-                    }
+                    onChange={(e) => updateEvent({ dateTime: e.target.value })}
                   />
                 </label>
                 {!isMinimalCover && (
@@ -1196,12 +1180,7 @@ function App() {
                     <textarea
                       rows={2}
                       value={state.event.location}
-                      onChange={(event) =>
-                        setState((previous) => ({
-                          ...previous,
-                          event: { ...previous.event, location: event.target.value },
-                        }))
-                      }
+                      onChange={(e) => updateEvent({ location: e.target.value })}
                     />
                   </label>
                 )}
@@ -1222,10 +1201,7 @@ function App() {
                               const file = event.target.files?.[0]
                               if (!file) return
                               const dataUrl = await handleFile(file)
-                              setState((previous) => ({
-                                ...previous,
-                                event: { ...previous.event, organizerLogoDataUrl: dataUrl },
-                              }))
+                              updateEvent({ organizerLogoDataUrl: dataUrl })
                             } catch (fileError) {
                               setError(fileError instanceof Error ? fileError.message : 'Invalid file.')
                             }
@@ -1241,12 +1217,7 @@ function App() {
                     <button
                       type="button"
                       className="resolution-toggle"
-                      onClick={() =>
-                        setState((previous) => ({
-                          ...previous,
-                          event: { ...previous.event, registrationEnabled: !previous.event.registrationEnabled },
-                        }))
-                      }
+                      onClick={() => updateEvent({ registrationEnabled: !state.event.registrationEnabled })}
                     >
                       <div>
                         <strong>Show registration footer bar</strong>
@@ -1263,14 +1234,8 @@ function App() {
                           Registration bar style
                           <select
                             value={state.event.registrationStyle}
-                            onChange={(event) =>
-                              setState((previous) => ({
-                                ...previous,
-                                event: {
-                                  ...previous.event,
-                                  registrationStyle: event.target.value as EventDetails['registrationStyle'],
-                                },
-                              }))
+                            onChange={(e) =>
+                              updateEvent({ registrationStyle: e.target.value as EventDetails['registrationStyle'] })
                             }
                           >
                             <option value="cta_url">CTA + URL</option>
@@ -1283,12 +1248,7 @@ function App() {
                           <input
                             type="text"
                             value={state.event.registrationText}
-                            onChange={(event) =>
-                              setState((previous) => ({
-                                ...previous,
-                                event: { ...previous.event, registrationText: event.target.value },
-                              }))
-                            }
+                            onChange={(e) => updateEvent({ registrationText: e.target.value })}
                             placeholder="Register now"
                           />
                         </label>
@@ -1298,12 +1258,7 @@ function App() {
                           <input
                             type="text"
                             value={state.event.registrationUrl}
-                            onChange={(event) =>
-                              setState((previous) => ({
-                                ...previous,
-                                event: { ...previous.event, registrationUrl: event.target.value },
-                              }))
-                            }
+                            onChange={(e) => updateEvent({ registrationUrl: e.target.value })}
                             placeholder="gh.io/devdays"
                           />
                         </label>
@@ -1330,14 +1285,7 @@ function App() {
                       <input
                         type="text"
                         value={speaker.name}
-                        onChange={(event) =>
-                          setState((previous) => ({
-                            ...previous,
-                            speakers: previous.speakers.map((item) =>
-                              item.id === speaker.id ? { ...item, name: event.target.value } : item,
-                            ),
-                          }))
-                        }
+                        onChange={(e) => updateSpeaker(speaker.id, { name: e.target.value })}
                       />
                     </label>
                     <label>
@@ -1345,14 +1293,7 @@ function App() {
                       <input
                         type="text"
                         value={speaker.role ?? ''}
-                        onChange={(event) =>
-                          setState((previous) => ({
-                            ...previous,
-                            speakers: previous.speakers.map((item) =>
-                              item.id === speaker.id ? { ...item, role: event.target.value } : item,
-                            ),
-                          }))
-                        }
+                        onChange={(e) => updateSpeaker(speaker.id, { role: e.target.value })}
                       />
                     </label>
 
@@ -1367,12 +1308,7 @@ function App() {
                               const file = event.target.files?.[0]
                               if (!file) return
                               const dataUrl = await handleFile(file)
-                              setState((previous) => ({
-                                ...previous,
-                                speakers: previous.speakers.map((item) =>
-                                  item.id === speaker.id ? { ...item, photoDataUrl: dataUrl } : item,
-                                ),
-                              }))
+                              updateSpeaker(speaker.id, { photoDataUrl: dataUrl })
                             } catch (fileError) {
                               setError(fileError instanceof Error ? fileError.message : 'Invalid file.')
                             }
@@ -1406,12 +1342,7 @@ function App() {
                 <button
                   type="button"
                   className="resolution-toggle"
-                  onClick={() =>
-                    setState((previous) => ({
-                      ...previous,
-                      event: { ...previous.event, includeSupportedBy: !previous.event.includeSupportedBy },
-                    }))
-                  }
+                  onClick={() => updateEvent({ includeSupportedBy: !state.event.includeSupportedBy })}
                 >
                   <div>
                     <strong>Do you want to include partner logos?</strong>
@@ -1632,9 +1563,7 @@ function App() {
                     <div className="history-meta">
                       <strong>{formatOptions.find((option) => option.id === item.state.format)?.name ?? item.state.format}</strong>
                       <span>{new Date(item.createdAt).toLocaleString()}</span>
-                      <span>
-                        {item.state.event.city || 'City'} • {item.state.event.dateTime || 'Date/Time'}
-                      </span>
+                      <span>{item.state.event.city || 'City'} • {item.state.event.dateTime || 'Date/Time'}</span>
                     </div>
                     <div className="history-actions">
                       <button type="button" onClick={() => restoreBanner(item)}>
