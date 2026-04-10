@@ -64,6 +64,33 @@
   display: block;
 }
 
+.repo-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.72rem 1rem;
+  border: 1px solid rgba(201, 209, 217, 0.16);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(33, 38, 45, 0.96), rgba(22, 27, 34, 0.92));
+  color: var(--vscode-text);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 24px rgba(1, 4, 9, 0.28);
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.repo-tab:hover {
+  transform: translateY(-1px);
+  border-color: var(--vscode-accent);
+  box-shadow: 0 14px 32px rgba(1, 4, 9, 0.34);
+}
+
+.repo-tab svg {
+  flex: none;
+}
+
 .layout {
   max-width: 1420px;
   margin: 0 auto;
@@ -360,8 +387,11 @@ button.danger {
 }
 
 .logo-tile img {
-  width: 100%;
+  width: calc(100% - 15px);
+  max-width: calc(100% - 15px);
   height: 70px;
+  margin-right: 15px;
+  justify-self: start;
   object-fit: contain;
   background: var(--vscode-bg);
   border-radius: 6px;
@@ -626,6 +656,7 @@ button.danger {
 @media (max-width: 980px) {
   .header {
     padding: 0.9rem;
+    flex-wrap: wrap;
   }
 
   .layout {
@@ -661,6 +692,11 @@ button.danger {
 }
 
 @media (max-width: 640px) {
+  .repo-tab {
+    width: 100%;
+    justify-content: center;
+  }
+
   .format-grid-pair {
     grid-template-columns: 1fr;
   }
